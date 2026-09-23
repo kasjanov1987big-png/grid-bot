@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
+Versija 2.2: bystryj zapusk, Status s orderami, redaktiruemye Nastrojki,
+polnyj bjekap (trades.csv + state.json) odnoj knopkoj.
 Kod tolko na latinice - tak file ne lomaetsja pri peredache s telefona.
 """
 import logging
@@ -17,6 +19,7 @@ class TelegramController:
         self.dp = Dispatcher()
         self.admin_id = admin_id
         self.broker = broker
+        broker.notify = self._notify_admin
         self._register()
 
     def _register(self):
@@ -27,6 +30,13 @@ class TelegramController:
         self.dp.message(F.text == "Statistika")(self.cmd_stats)
         self.dp.message(F.text == "Logi")(self.cmd_logs)
         self.dp.message(F.text == "Nastrojki")(self.cmd_settings)
+        self.dp.callback_query(F.data.startswith("set:"))(self.cb_settings)
+
+    async def _notify_admin(self, text):
+        try:
+            await self.bot.send_message(self.admin_id, text)
+        except Exception as e:
+            logger.error("Notify error: %s", e)
 
     async def _is_admin(self, msg):
         if msg.from_user.id != self.admin_id:
@@ -67,13 +77,9 @@ class TelegramController:
         if self.broker.running:
             await msg.answer("Bot uzhe rabotaet.")
             return
-        await msg.answer("Stroju setku po tekushchej cene...")
+        await msg.answer("Zapuskayu... Otchet o postroenii setki pridjet otdelno.")
         ok = await self.broker.start()
-        if ok:
-            await msg.answer("Setka zapushchena! Kazhdye "
-                             + str(self.broker.config.POLL_SEC)
-                             + " sek proverjaju rynok.")
-        else:
+        if not ok:
             await msg.answer("Ne udalos zapustit.")
 
     async def cmd_stop(self, msg):
@@ -102,6 +108,8 @@ class TelegramController:
             "<b>Polnaja statistika</b>\n\n"
             "Zavershennykh tsiklov: <b>" + str(s["cycles"]) + "</b>\n"
             "Vsego sdelok: <b>" + str(s["trades"]) + "</b>\n"
+            "Prodazh inventarja: <b>" + str(s.get("inv_sells", 0)) + "</b>\n"
+            "Perestroek setki: <b>" + str(s.get("rebuilds", 0)) + "</b>\n"
             "Summarnaja komissija: <b>" + str(round(s["fees_paid"], 4))
             + "</b> USDT\n"
             "Chistaja pribyl: <b>" + str(round(s["realized_pnl"], 4))
@@ -117,29 +125,84 @@ class TelegramController:
     async def cmd_logs(self, msg):
         if not await self._is_admin(msg):
             return
-        try:
-            await msg.answer_document(
-                types.FSInputFile(self.broker.trades_file),
-                caption="trades.csv - zhurnal sdelok",
-            )
-        except Exception as e:
-            await msg.answer("Ne udalos otpravit file: " + str(e))
+        for path, cap in [
+            (self.broker.trades_file, "trades.csv - zhurnal sdelok"),
+            (self.broker.state_file, "state.json - polnoe sostojanie"),
+        ]:
+            try:
+                await msg.answer_document(
+                    types.FSInputFile(path), caption=cap)
+            except Exception as e:
+                await msg.answer("Ne udalos otpravit " + path + ": " + str(e))
 
     async def cmd_settings(self, msg):
         if not await self._is_admin(msg):
             return
         c = self.broker.config
+        s = self.broker.state["settings"]
+        step = s.get("step", c.STEP_PCT)
+        quote = s.get("quote", c.QUOTE_PER_ORDER)
+        levels = s.get("levels", c.LEVELS_PER_SIDE)
+        poll = s.get("poll", c.POLL_SEC)
+        slip = s.get("slippage", c.SLIPPAGE_PCT)
+        rextra = s.get("rebuild_extra", 2)
+
         text = (
-            "<b>Nastrojki</b>\n\n"
+            "<b>Nastrojki</b> (primenjajutsja pri sledujushchem zapuske setki)\n\n"
             "Rezhim: <code>PAPER (bez klyuchej)</code>\n"
             "Para: <code>" + c.SYMBOL + "</code>\n"
-            "Summa na order: <code>" + str(c.QUOTE_PER_ORDER) + "</code> USDT\n"
-            "Shag setki: <code>" + str(round(c.STEP_PCT * 100, 2)) + "%</code>\n"
-            "Urovnej s kazhdo storony: <code>" + str(c.LEVELS_PER_SIDE) + "</code>\n"
-            "Proverka kazhdye: <code>" + str(c.POLL_SEC) + "</code> sek\n"
-            "Komissija: <code>" + str(round(c.FEE_PCT * 100, 2)) + "%</code>"
+            "Summa na order: <code>" + str(round(quote, 2)) + "</code> USDT\n"
+            "Shag setki: <code>" + str(round(step * 100, 2)) + "%</code>\n"
+            "Urovnej s kazhdo storony: <code>" + str(levels) + "</code>\n"
+            "Proverka kazhdye: <code>" + str(poll) + "</code> sek\n"
+            "Slippage: <code>" + str(round(slip * 100, 3)) + "%</code>\n"
+            "Rebuild posle urovnej za krajem: <code>" + str(rextra) + "</code>\n"
+            "Komissija: <code>" + str(round(c.FEE_PCT * 100, 2)) + "%</code>\n"
+            "Limit prosadki dnja: <code>" + str(round(c.DD_LIMIT_PCT * 100, 1)) + "%</code>"
         )
-        await msg.answer(text, parse_mode=ParseMode.HTML)
+        kb = types.InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    types.InlineKeyboardButton(text="Shag -0.2%", callback_data="set:step:-0.002"),
+                    types.InlineKeyboardButton(text="Shag +0.2%", callback_data="set:step:+0.002"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Summa -1$", callback_data="set:quote:-1.0"),
+                    types.InlineKeyboardButton(text="Summa +1$", callback_data="set:quote:+1.0"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Urovni -1", callback_data="set:levels:-1"),
+                    types.InlineKeyboardButton(text="Urovni +1", callback_data="set:levels:+1"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Interval -5sek", callback_data="set:poll:-5"),
+                    types.InlineKeyboardButton(text="Interval +5sek", callback_data="set:poll:+5"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Rebld -1", callback_data="set:rebuild_extra:-1"),
+                    types.InlineKeyboardButton(text="Rebld +1", callback_data="set:rebuild_extra:+1"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Slip -0.05%", callback_data="set:slippage:-0.0005"),
+                    types.InlineKeyboardButton(text="Slip +0.05%", callback_data="set:slippage:+0.0005"),
+                ],
+            ]
+        )
+        await msg.answer(text, reply_markup=kb, parse_mode=ParseMode.HTML)
+
+    async def cb_settings(self, cq: types.CallbackQuery):
+        if cq.from_user.id != self.admin_id:
+            await cq.answer("Dostup zapreshchen.", show_alert=True)
+            return
+        parts = cq.data.split(":")
+        if len(parts) != 3:
+            await cq.answer("Neizvestnaja komanda.")
+            return
+        key = parts[1]
+        delta = float(parts[2])
+        new_val = self.broker.update_setting(key, delta)
+        await cq.answer("Sokhraneno: " + key + " = " + str(round(new_val, 4)))
+        await self.cmd_settings(cq.message)
 
     async def run(self):
         logger.info("Telegram-bot zapushchen")

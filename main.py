@@ -1,14 +1,18 @@
 # -*- coding: utf-8 -*-
 """
-Точка входа: paper grid-бот + Telegram-управление.
+Tochka vkhoda: paper grid-bot + Telegram-upravlenie.
+Versija 2.
 """
 import asyncio
 import logging
+import os
 import sys
 
 import config
 from paper_bot import PaperBroker
 from telegram_bot import TelegramController
+
+os.makedirs(config.DATA_DIR, exist_ok=True)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -22,15 +26,15 @@ logging.basicConfig(
 
 def validate():
     errors = []
-    if "ВСТАВЬ" in config.TELEGRAM_TOKEN:
-        errors.append("TELEGRAM_TOKEN не заполнен")
+    if "VSTAV" in config.TELEGRAM_TOKEN:
+        errors.append("TELEGRAM_TOKEN ne zapolnen")
     if config.ADMIN_ID == 0:
-        errors.append("ADMIN_ID не заполнен (узнай у @userinfobot)")
+        errors.append("ADMIN_ID ne zapolnen")
     if errors:
-        print("❌ ОШИБКА ЗАПУСКА:")
+        print("OSHIbKA ZAPUSKA:")
         for e in errors:
-            print(f"   • {e}")
-        print("\nЗаполни переменные окружения в Railway.")
+            print("   - " + e)
+        print("Zapolni peremennye okruzhenija v Railway.")
         return False
     return True
 

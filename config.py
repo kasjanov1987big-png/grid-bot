@@ -1,30 +1,36 @@
 # -*- coding: utf-8 -*-
 """
-Конфигурация PAPER grid-бота.
-Ключи Bybit НЕ нужны — бот берёт только публичные цены.
+Konfiguratsija PAPER grid-bota. Versija 2.2.
+Klyuchi Bybit NE nuzhny - bot beret tolko publichnye ceny.
 """
 import os
 
 # ============ TELEGRAM ============
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "ВСТАВЬ_ТОКЕН_БОТА")
-ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))   # твой Telegram ID (узнай у @userinfobot)
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "VSTAV_TOKEN_BOTA")
+ADMIN_ID = int(os.getenv("ADMIN_ID", "0"))
 
-# ============ РЫНОК (публичные данные) ============
+# ============ RYNOK (publichnye dannye) ============
 SYMBOL = os.getenv("SYMBOL", "SOLUSDT")
-POLL_SEC = int(os.getenv("POLL_SEC", "10"))   # как часто проверять цену и исполнения
+POLL_SEC = int(os.getenv("POLL_SEC", "10"))
 
-# ============ СЕТКА ============
-QUOTE_PER_ORDER = float(os.getenv("QUOTE_PER_ORDER", "10.0"))  # USDT на один ордер
-STEP_PCT = float(os.getenv("STEP_PCT", "0.012"))               # шаг 1.2%
-LEVELS_PER_SIDE = int(os.getenv("LEVELS_PER_SIDE", "4"))       # 4 вверх + 4 вниз
+# ============ SETKA (znachenija po umolchaniju) ============
+QUOTE_PER_ORDER = float(os.getenv("QUOTE_PER_ORDER", "10.0"))
+STEP_PCT = float(os.getenv("STEP_PCT", "0.012"))
+LEVELS_PER_SIDE = int(os.getenv("LEVELS_PER_SIDE", "4"))
 
-# ============ КОМИССИЯ (симуляция) ============
-FEE_PCT = float(os.getenv("FEE_PCT", "0.001"))   # 0.1% как на Bybit спот
+# ============ KOMISSIJA I REALIZM ============
+FEE_PCT = float(os.getenv("FEE_PCT", "0.001"))
+SLIPPAGE_PCT = float(os.getenv("SLIPPAGE_PCT", "0.0005"))   # 0.05% proskalzyvanie
 
-# ============ БАНК ============
-START_BALANCE = float(os.getenv("START_BALANCE", "100.0"))  # стартовые виртуальные USDT
+# ============ ZASHCHITA ============
+DD_LIMIT_PCT = float(os.getenv("DD_LIMIT_PCT", "0.05"))     # dnevnoj limit prosadki 5%
 
-# ============ ФАЙЛЫ ============
-STATE_FILE = "state.json"
-TRADES_FILE = "trades.csv"
-LOG_FILE = "bot.log"
+# ============ BANK ============
+START_BALANCE = float(os.getenv("START_BALANCE", "100.0"))
+
+# ============ FAJLY ============
+# Esli podkljuchen Railway Volume - zadaj peremennuju DATA_DIR=/data
+DATA_DIR = os.getenv("DATA_DIR", ".")
+STATE_FILE = os.path.join(DATA_DIR, "state.json")
+TRADES_FILE = os.path.join(DATA_DIR, "trades.csv")
+LOG_FILE = os.path.join(DATA_DIR, "bot.log")
