@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 2.2: bystryj zapusk, Status s orderami, redaktiruemye Nastrojki,
-polnyj bjekap (trades.csv + state.json) odnoj knopkoj.
+Versija 3.0: bystryj zapusk, Status s orderami, redaktiruemye Nastrojki,
+polnyj bjekap (trades.csv + state.json) odnoj knopkoj, metod send()
+dlja uvedomlenij iz main.py (avto-resume).
 Kod tolko na latinice - tak file ne lomaetsja pri peredache s telefona.
 """
 import logging
@@ -37,6 +38,10 @@ class TelegramController:
             await self.bot.send_message(self.admin_id, text)
         except Exception as e:
             logger.error("Notify error: %s", e)
+
+    async def send(self, text):
+        """Otpravka soobshchenija adminu izvne (napr., iz main.py pri avto-resume)."""
+        await self._notify_admin(text)
 
     async def _is_admin(self, msg):
         if msg.from_user.id != self.admin_id:

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Tochka vkhoda: paper grid-bot + Telegram-upravlenie.
-Versija 2.
+Versija 3.
+- Avto-resume: esli pri restarte (Railway redeploy/reboot) v state.json
+  stojalo active=true, bot sam prodolzhaet rabotu bez knopki v Telegram.
 """
 import asyncio
 import logging
@@ -45,6 +47,14 @@ async def main():
 
     broker = PaperBroker(config)
     tg = TelegramController(config.TELEGRAM_TOKEN, config.ADMIN_ID, broker)
+
+    # Avto-resume: byl zapushchen do restarta - vozobnovljaem bez knopki
+    if broker.state.get("active"):
+        await broker.start()
+        await tg.send(
+            "Bot avtomaticheski zapushchen posle restarta (avto-resume)."
+        )
+
     await tg.run()
 
 
