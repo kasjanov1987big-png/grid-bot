@@ -1,8 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 2.2.
+PAPER grid-bot. Versija 3.1.
 
-Izmenenija vs 2.1:
+Izmenenija vs 2.2:
+- V3.1: bank perezhivajet zapuski. Balansy initsializirujutsja odin raz
+  ot START_BALANCE i bolshe ne sbrosyvajutsja pri build_grid.
+  Migracija: starye sostojanija (do bank_initialized) schitajutsja
+  proinitsializirovannymi - nakoplennyj bank ne terjaetsja.
 - A1: prodazhi startovogo inventarja schitajutsja po sebestoimosti (inv_cost);
 - A2: tsikly parnye po urovnjam (buy idx -> sell idx+1), fallback - inventar;
 - A3: slippage pri ispolnenii (nastrojka, default 0.05%);
@@ -92,9 +96,9 @@ class PaperBroker:
     def _load_state(self):
         try:
             with open(self.state_file, "r", encoding="utf-8") as f:
-                return json.load(f)
+                st = json.load(f)
         except Exception:
-            return {
+            st = {
                 "active": False,
                 "levels": [],
                 "orders": {},
@@ -111,6 +115,11 @@ class PaperBroker:
                 "stats": {"cycles": 0, "trades": 0, "realized_pnl": 0.0,
                           "fees_paid": 0.0, "inv_sells": 0, "rebuilds": 0},
             }
+        # V3.1: starye sostojanija (do bank_initialized) schitaem
+        # proinitsializirovannymi - chtoby ne sbrosit nakoplennyj bank
+        if "bank_initialized" not in st:
+            st["bank_initialized"] = bool(st.get("start_equity"))
+        return st
 
     def _save_state(self):
         with open(self.state_file, "w", encoding="utf-8") as f:
@@ -129,6 +138,21 @@ class PaperBroker:
         self.state["day_start_realized"] = self.state["stats"]["realized_pnl"]
         self.state["day_trades"] = 0
         self.state["day_cycles"] = 0
+
+    def _init_bank(self, price, levels):
+        """V3.1: odin raz delit START_BALANCE mezhdu USDT i bazoj monetoj."""
+        n_buy = sum(1 for p in levels if p < price)
+        n_sell = sum(1 for p in levels if p > price)
+        total = n_buy + n_sell
+        if total == 0:
+            n_buy = n_sell = 1
+            total = 2
+        usdt_part = self.config.START_BALANCE * n_buy / total
+        base_part = self.config.START_BALANCE - usdt_part
+        self.state["balances"] = {
+            "USDT": round(usdt_part, 2),
+            self.base_coin: round(base_part / price, 6),
+        }
 
     async def get_price(self):
         r = await asyncio.to_thread(
@@ -161,20 +185,21 @@ class PaperBroker:
             levels.insert(0, round(price * (1 - step) ** i, 2))
             levels.append(round(price * (1 + step) ** i, 2))
 
-        buys = [p for p in levels if p < price]
-        sells = [p for p in levels if p > price]
-
         self.state["levels"] = levels
         self.state["orders"] = {}
         self.state["open_buys"] = []
         self.state["inv_cost"] = price   # A1: sebestoimost inventarja
-        self.state["balances"] = {
-            "USDT": round(quote * len(buys) * 1.05, 2),
-            self.base_coin: round(sum(quote / p for p in sells) * 1.05, 6),
-        }
-        equity = self.state["balances"]["USDT"] + \
-            self.state["balances"][self.base_coin] * price
-        self.state["start_equity"] = round(equity, 2)
+
+        # V3.1: bank perezhivajet zapuski - initsializiruem tolko odin raz
+        if not self.state.get("bank_initialized"):
+            self._init_bank(price, levels)
+            self.state["bank_initialized"] = True
+
+        b = self.state["balances"]
+        equity = b["USDT"] + b[self.base_coin] * price
+        # start_equity fiksiruetsja odin raz - Itog PnL otnositsja k deposity
+        if not self.state.get("start_equity"):
+            self.state["start_equity"] = round(equity, 2)
         self._init_day(equity)
 
         for i, p in enumerate(levels):
@@ -464,7 +489,8 @@ class PaperBroker:
                     try:
                         await self.notify(
                             "VNIMANIE: 5 oshibok podrjad. "
-                            "Prover Bybit/Railway.")
+                            "Prover Bybit/Railway."
+                        )
                     except Exception as ne:
                         logger.error("Notify error: %s", ne)
                 await asyncio.sleep(30)
