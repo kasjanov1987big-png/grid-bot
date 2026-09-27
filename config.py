@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Konfiguratsija PAPER grid-bota. Versija 2.2.
+Konfiguratsija PAPER grid-bota. Versija 3.2.
 Klyuchi Bybit NE nuzhny - bot beret tolko publichnye ceny.
 """
 import os
@@ -33,4 +33,5 @@ START_BALANCE = float(os.getenv("START_BALANCE", "100.0"))
 DATA_DIR = os.getenv("DATA_DIR", ".")
 STATE_FILE = os.path.join(DATA_DIR, "state.json")
 TRADES_FILE = os.path.join(DATA_DIR, "trades.csv")
+EQUITY_FILE = os.path.join(DATA_DIR, "equity.csv")
 LOG_FILE = os.path.join(DATA_DIR, "bot.log")

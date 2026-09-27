@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.1.
+PAPER grid-bot. Versija 3.2.
 
 Izmenenija vs 2.2:
+- V3.2: raz v chas snimok ekviti v equity.csv (dlja grafika v Telegram).
 - V3.1: bank perezhivajet zapuski. Balansy initsializirujutsja odin raz
   ot START_BALANCE i bolshe ne sbrosyvajutsja pri build_grid.
   Migracija: starye sostojanija (do bank_initialized) schitajutsja
@@ -44,6 +45,7 @@ class PaperBroker:
         self.notify = None
         self._consec_errors = 0
         self._error_alerted = False
+        self._last_equity_snap = 0.0
 
     # ---------- nastrojki ----------
 
@@ -373,6 +375,31 @@ class PaperBroker:
         if filled:
             self._save_state()
 
+    async def _equity_tick(self, price):
+        """V3.2: raz v chas dopisyvaet snimok ekviti v equity.csv."""
+        now = time.time()
+        if now - self._last_equity_snap < 3600:
+            return
+        self._last_equity_snap = now
+        b = self.state["balances"]
+        equity = b["USDT"] + b[self.base_coin] * price
+        path = self.config.EQUITY_FILE
+        try:
+            exists = os.path.exists(path)
+            with open(path, "a", newline="", encoding="utf-8") as f:
+                w = csv.writer(f)
+                if not exists:
+                    w.writerow(["time", "price", "equity",
+                                "realized_pnl", "usdt", "base"])
+                w.writerow([
+                    datetime.now().strftime("%Y-%m-%d %H:%M"),
+                    round(price, 4), round(equity, 4),
+                    round(self.state["stats"]["realized_pnl"], 5),
+                    round(b["USDT"], 4), round(b[self.base_coin], 6),
+                ])
+        except Exception as e:
+            logger.error("Equity snapshot error: %s", e)
+
     # ---------- dnevnoj dajdzhest i limit prosadki ----------
 
     async def _daily_tick(self, price):
@@ -438,6 +465,7 @@ class PaperBroker:
                 await self.check_fills()
                 price = self._last_price
                 if price:
+                    await self._equity_tick(price)
                     await self._daily_tick(price)
                     if not self.running:
                         break

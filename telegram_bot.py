@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 3.0: bystryj zapusk, Status s orderami, redaktiruemye Nastrojki,
+Versija 3.2: knopka Grafik (ekviti), Status s orderami, redaktiruemye Nastrojki,
 polnyj bjekap (trades.csv + state.json) odnoj knopkoj, metod send()
 dlja uvedomlenij iz main.py (avto-resume).
 Kod tolko na latinice - tak file ne lomaetsja pri peredache s telefona.
 """
 import logging
+import os
+import csv
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.enums import ParseMode
@@ -31,6 +33,7 @@ class TelegramController:
         self.dp.message(F.text == "Statistika")(self.cmd_stats)
         self.dp.message(F.text == "Logi")(self.cmd_logs)
         self.dp.message(F.text == "Nastrojki")(self.cmd_settings)
+        self.dp.message(F.text == "Grafik")(self.cmd_graph)
         self.dp.callback_query(F.data.startswith("set:"))(self.cb_settings)
 
     async def _notify_admin(self, text):
@@ -65,6 +68,9 @@ class TelegramController:
                 [
                     types.KeyboardButton(text="Logi"),
                     types.KeyboardButton(text="Nastrojki"),
+                ],
+                [
+                    types.KeyboardButton(text="Grafik"),
                 ],
             ],
             resize_keyboard=True,
@@ -139,6 +145,54 @@ class TelegramController:
                     types.FSInputFile(path), caption=cap)
             except Exception as e:
                 await msg.answer("Ne udalos otpravit " + path + ": " + str(e))
+
+    async def cmd_graph(self, msg):
+        if not await self._is_admin(msg):
+            return
+        path = self.broker.config.EQUITY_FILE
+        if not os.path.exists(path):
+            await msg.answer(
+                "Net dannykh dlja grafika. Pojavjatsja cherez ~1 chas "
+                "posle zapuska bota.")
+            return
+        try:
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            times, equities, realized = [], [], []
+            with open(path, "r", encoding="utf-8") as f:
+                for row in csv.reader(f):
+                    if row and row[0] != "time":
+                        times.append(row[0])
+                        equities.append(float(row[2]))
+                        realized.append(float(row[3]))
+            if len(times) < 2:
+                await msg.answer(
+                    "Slishkom malo tochek dlja grafika: podozhdi "
+                    "neskolko chasov.")
+                return
+            fig, ax = plt.subplots(figsize=(8, 4.5))
+            ax.plot(times, equities, marker="o", label="Equity (USDT)")
+            ax.plot(times, realized, marker=".", label="Realiz. pribyl")
+            ax.set_title("Grid-bot: ekviti vo vremeni")
+            ax.set_ylabel("USDT")
+            ax.grid(True, alpha=0.3)
+            ax.legend()
+            step = max(1, len(times) // 8)
+            ax.set_xticks(range(0, len(times), step))
+            ax.set_xticklabels(
+                [times[i] for i in range(0, len(times), step)],
+                rotation=45, fontsize=7)
+            fig.tight_layout()
+            png = os.path.join(os.path.dirname(path), "equity_graph.png")
+            fig.savefig(png, dpi=110)
+            plt.close(fig)
+            await msg.answer_photo(
+                types.FSInputFile(png),
+                caption="Ekviti: " + str(round(equities[-1], 2)) +
+                " USDT | tochek: " + str(len(times)))
+        except Exception as e:
+            await msg.answer("Ne udalos postroit grafik: " + str(e))
 
     async def cmd_settings(self, msg):
         if not await self._is_admin(msg):
