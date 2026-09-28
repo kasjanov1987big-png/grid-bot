@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 3.3: knopka Grafik (ekviti, autoscale osi Y), Status s orderami, redaktiruemye Nastrojki,
+Versija 3.4: knopka Grafik, ezhednevnyj avto-bjekap fajlov, Status s orderami, redaktiruemye Nastrojki,
 polnyj bjekap (trades.csv + state.json) odnoj knopkoj, metod send()
 dlja uvedomlenij iz main.py (avto-resume).
 Kod tolko na latinice - tak file ne lomaetsja pri peredache s telefona.
@@ -23,6 +23,7 @@ class TelegramController:
         self.admin_id = admin_id
         self.broker = broker
         broker.notify = self._notify_admin
+        broker.notify_file = self._send_document
         self._register()
 
     def _register(self):
@@ -45,6 +46,14 @@ class TelegramController:
     async def send(self, text):
         """Otpravka soobshchenija adminu izvne (napr., iz main.py pri avto-resume)."""
         await self._notify_admin(text)
+
+    async def _send_document(self, path, caption=""):
+        """V3.4: otpravka fajla adminu (avto-bjekap iz paper_bot)."""
+        try:
+            await self.bot.send_document(
+                self.admin_id, types.FSInputFile(path), caption=caption)
+        except Exception as e:
+            logger.error("Send file error: %s", e)
 
     async def _is_admin(self, msg):
         if msg.from_user.id != self.admin_id:

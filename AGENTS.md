@@ -8,7 +8,7 @@
 PAPER grid-бот на Python (asyncio + aiogram 3 + pybit). Берёт реальные
 цены Bybit Spot (публичный API, ключи НЕ нужны), торгует виртуальными
 деньгами, управляется через Telegram. Деплоится на Railway как worker.
-Версия кода: 3.3 (см. PROGRESS.md).
+Версия кода: 3.4 (см. PROGRESS.md).
 
 ## Правила работы с кодом
 
@@ -49,6 +49,8 @@ PAPER grid-бот на Python (asyncio + aiogram 3 + pybit). Берёт реал
 - v3.3: зеркальные ордера ставятся через `_place_virtual_safe` — не
   перезаписывают существующий ордер на уровне (защита при гэпах цены).
   График: две оси Y (twinx) — эквити и прибыль с автомасштабом каждая.
+- v3.4: ежедневный автобэкап — с дайджестом приходят state.json и
+  trades.csv (`broker.notify_file(path, caption)`, хук в TelegramController).
 - Состояние — один `state.json` (балансы, ордера, open_buys, stats, day-*).
   На Railway должно быть `DATA_DIR=/data` + Volume `/data`, иначе состояние
   теряется при рестарте.

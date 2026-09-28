@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.3.
+PAPER grid-bot. Versija 3.4.
 
 Izmenenija vs 2.2:
+- V3.4: ezhednevnyj avto-bjekap state.json + trades.csv v Telegram
+  vmeste s dajdzhestom (cherez kolbjek notify_file).
 - V3.3: zerkalnye ordera ne perezapisyvajut suschestvujushchie
   na tom zhe urovne (zashchita pri gepakh ceny za odin tik).
 - V3.2: raz v chas snimok ekviti v equity.csv (dlja grafika v Telegram).
@@ -45,6 +47,7 @@ class PaperBroker:
         self._last_price = None
         self._started_at = None
         self.notify = None
+        self.notify_file = None
         self._consec_errors = 0
         self._error_alerted = False
         self._last_equity_snap = 0.0
@@ -439,6 +442,16 @@ class PaperBroker:
                     )
                 except Exception as e:
                     logger.error("Notify error: %s", e)
+            # V3.4: avto-bjekap vmeste s dajdzhestom
+            if self.notify_file:
+                for path, cap in [
+                    (self.state_file, "Bjekap: state.json"),
+                    (self.trades_file, "Bjekap: trades.csv"),
+                ]:
+                    try:
+                        await self.notify_file(path, cap)
+                    except Exception as e:
+                        logger.error("Backup file error: %s", e)
         self._init_day(equity)
         self._save_state()
 
