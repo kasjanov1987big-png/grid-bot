@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.2.
+PAPER grid-bot. Versija 3.3.
 
 Izmenenija vs 2.2:
+- V3.3: zerkalnye ordera ne perezapisyvajut suschestvujushchie
+  na tom zhe urovne (zashchita pri gepakh ceny za odin tik).
 - V3.2: raz v chas snimok ekviti v equity.csv (dlja grafika v Telegram).
 - V3.1: bank perezhivajet zapuski. Balansy initsializirujutsja odin raz
   ot START_BALANCE i bolshe ne sbrosyvajutsja pri build_grid.
@@ -176,6 +178,14 @@ class PaperBroker:
         logger.info("Virt. order %s %s @ %s (level %s)",
                     side, round(qty, 4), round(price, 2), idx)
 
+    def _place_virtual_safe(self, idx, side, price, qty):
+        """V3.3: stavit order tolko esli na urovne ego esche net."""
+        if str(idx) in self.state["orders"]:
+            logger.info("Uroven %s zanjat - zerkalo ne stavim", idx)
+            return False
+        self._place_virtual(idx, side, price, qty)
+        return True
+
     async def build_grid(self):
         price = await self.get_price()
         step = self.eff_step()
@@ -345,9 +355,9 @@ class PaperBroker:
 
         levels = self.state["levels"]
         if side == "Buy" and idx + 1 < len(levels):
-            self._place_virtual(idx + 1, "Sell", levels[idx + 1], qty)
+            self._place_virtual_safe(idx + 1, "Sell", levels[idx + 1], qty)
         elif side == "Sell" and idx - 1 >= 0:
-            self._place_virtual(idx - 1, "Buy", levels[idx - 1], qty)
+            self._place_virtual_safe(idx - 1, "Buy", levels[idx - 1], qty)
 
         del self.state["orders"][str(idx)]
 

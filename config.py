@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-Konfiguratsija PAPER grid-bota. Versija 3.2.
+Konfiguratsija PAPER grid-bota. Versija 3.3.
 Klyuchi Bybit NE nuzhny - bot beret tolko publichnye ceny.
 """
 import os

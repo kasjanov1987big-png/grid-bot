@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 3.2: knopka Grafik (ekviti), Status s orderami, redaktiruemye Nastrojki,
+Versija 3.3: knopka Grafik (ekviti, autoscale osi Y), Status s orderami, redaktiruemye Nastrojki,
 polnyj bjekap (trades.csv + state.json) odnoj knopkoj, metod send()
 dlja uvedomlenij iz main.py (avto-resume).
 Kod tolko na latinice - tak file ne lomaetsja pri peredache s telefona.
@@ -172,12 +172,25 @@ class TelegramController:
                     "neskolko chasov.")
                 return
             fig, ax = plt.subplots(figsize=(8, 4.5))
-            ax.plot(times, equities, marker="o", label="Equity (USDT)")
-            ax.plot(times, realized, marker=".", label="Realiz. pribyl")
+            ax.plot(times, equities, marker="o", color="tab:blue",
+                    label="Equity (USDT)")
+            ax.set_ylabel("Equity, USDT", color="tab:blue")
+            ax.tick_params(axis="y", labelcolor="tab:blue")
+            ax2 = ax.twinx()
+            ax2.plot(times, realized, marker=".", color="tab:orange",
+                     label="Realiz. pribyl")
+            ax2.set_ylabel("Realiz. pribyl, USDT", color="tab:orange")
+            ax2.tick_params(axis="y", labelcolor="tab:orange")
+            lo, hi = min(equities), max(equities)
+            pad = max((hi - lo) * 0.2, 0.5)
+            ax.set_ylim(lo - pad, hi + pad)
+            lo2, hi2 = min(realized), max(realized)
+            pad2 = max((hi2 - lo2) * 0.2, 0.1)
+            ax2.set_ylim(lo2 - pad2, hi2 + pad2)
             ax.set_title("Grid-bot: ekviti vo vremeni")
-            ax.set_ylabel("USDT")
             ax.grid(True, alpha=0.3)
-            ax.legend()
+            lines = ax.get_lines() + ax2.get_lines()
+            ax.legend(lines, [l.get_label() for l in lines], loc="best")
             step = max(1, len(times) // 8)
             ax.set_xticks(range(0, len(times), step))
             ax.set_xticklabels(
