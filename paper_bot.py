@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.7.
+PAPER grid-bot. Versija 3.8.
 
 Izmenenija vs 2.2:
+- V3.8: sebestoimost inventarja - vzveshennoe srednee (WAC) pokupok.
+  Perezhivajet restarty i perestrojki; sbros tolko pri nulevoj baze.
 - V3.7: v status - nerealizovannyj PnL inventarja; v trades.csv
   kolonki kind (buy/cycle/inv) i level dlja tochnoj analitiki.
 - V3.6: statistika tsiklov - winrate, luchshij/khudshij tsikl
@@ -209,7 +211,9 @@ class PaperBroker:
         self.state["levels"] = levels
         self.state["orders"] = {}
         self.state["open_buys"] = []
-        self.state["inv_cost"] = price   # A1: sebestoimost inventarja
+        # V3.8: WAC - jakorim sebestoimost tolko esli inventarja net
+        if self.state["balances"].get(self.base_coin, 0) <= 0:
+            self.state["inv_cost"] = price
 
         # V3.1: bank perezhivajet zapuski - initsializiruem tolko odin raz
         if not self.state.get("bank_initialized"):
@@ -262,8 +266,7 @@ class PaperBroker:
             st["realized_pnl"] += pnl
         self.state["open_buys"] = []
         st["rebuilds"] = st.get("rebuilds", 0) + 1
-        if bal[base] > 0:
-            self.state["inv_cost"] = price   # novaja sebestoimost inventarja
+        # V3.8: sebestoimost (WAC) sohranjaetsja pri perestrojke
 
         levels = [round(price, 2)]
         for i in range(1, n + 1):
@@ -325,6 +328,13 @@ class PaperBroker:
         kind = "buy"
         if side == "Buy":
             bal["USDT"] -= price * qty + fee
+            # V3.8: vzveshennaja sebestoimost (WAC) derzhimogo inventarja
+            old_qty = bal[base]
+            old_cost = self.state.get("inv_cost") or 0.0
+            new_qty = old_qty + qty
+            self.state["inv_cost"] = (
+                (old_qty * old_cost + qty * price) / new_qty
+                if new_qty > 0 else price)
             bal[base] += qty
             self.state["open_buys"].append(
                 {"price": price, "qty": qty, "fee": fee, "idx": idx})
@@ -364,6 +374,10 @@ class PaperBroker:
                 logger.info(
                     "PRODAZHA INVENTARJA: sebest. %s -> prod. %s | pribyl %s",
                     round(cost, 2), price, round(pnl, 4))
+            # V3.8: inventar prodan v nol - sbros WAC
+            if bal[base] <= 1e-9:
+                bal[base] = 0.0
+                self.state["inv_cost"] = 0.0
 
         with open(self.trades_file, "a", newline="", encoding="utf-8") as f:
             csv.writer(f).writerow([
