@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 3.6: multisymbol, winrate v statistike - neskolko PaperBroker, knopka "Para"
+Versija 3.9: multisymbol, winrate, filtr trenda (vykl po umolch.) - neskolko PaperBroker, knopka "Para"
 perekljuchaet aktivnuju paru. Uvedomlenija s prefiksom pary pri
 multisymbol. Kod tolko na latinice.
 """
@@ -279,6 +279,8 @@ class TelegramController:
             "Urovnej s kazhdo storony: <code>" + str(levels) + "</code>\n"
             "Proverka kazhdye: <code>" + str(poll) + "</code> sek\n"
             "Slippage: <code>" + str(round(slip * 100, 3)) + "%</code>\n"
+            "Filtr trenda: <code>" + ("VKL" if self.broker.state["settings"].get("filter_on", 0) else "VYKL") + "</code> "
+            "(porog <code>" + str(round(abs(self.broker.state["settings"].get("trend_thresh", 0.02)) * 100, 1)) + "%</code> za 6ch)\n"
             "Rebuild posle urovnej za krajem: <code>" + str(rextra) + "</code>\n"
             "Komissija: <code>" + str(round(c.FEE_PCT * 100, 2)) + "%</code>\n"
             "Limit prosadki dnja: <code>" + str(round(c.DD_LIMIT_PCT * 100, 1)) + "%</code>"
@@ -308,6 +310,13 @@ class TelegramController:
                 [
                     types.InlineKeyboardButton(text="Slip -0.05%", callback_data="set:slippage:-0.0005"),
                     types.InlineKeyboardButton(text="Slip +0.05%", callback_data="set:slippage:+0.0005"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Filtr trenda VKL/VYKL", callback_data="set:filter_on:0"),
+                ],
+                [
+                    types.InlineKeyboardButton(text="Porog -0.5%", callback_data="set:trend_thresh:-0.005"),
+                    types.InlineKeyboardButton(text="Porog +0.5%", callback_data="set:trend_thresh:+0.005"),
                 ],
             ]
         )

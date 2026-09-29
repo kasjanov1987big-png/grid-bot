@@ -1,8 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.8.
+PAPER grid-bot. Versija 3.9.
 
 Izmenenija vs 2.2:
+- V3.9: filtr trenda (VYKLiuchen po umolchaniju). Pri silnom padenii
+  (trend < poroga za 6 chasov) pokupki vstavljajutsja na pauzu,
+  prodazhi prodolzhajutsja. Nastrojki: filter_on, trend_thresh.
 - V3.8: sebestoimost inventarja - vzveshennoe srednee (WAC) pokupok.
   Perezhivajet restarty i perestrojki; sbros tolko pri nulevoj baze.
 - V3.7: v status - nerealizovannyj PnL inventarja; v trades.csv
@@ -27,6 +30,7 @@ Izmenenija vs 2.2:
 - B2: ezhednevnyj dajdzhest v Telegram.
 """
 import asyncio
+from collections import deque
 import json
 import csv
 import os
@@ -58,6 +62,8 @@ class PaperBroker:
         self._consec_errors = 0
         self._error_alerted = False
         self._last_equity_snap = 0.0
+        self._price_hist = deque(maxlen=3000)
+        self._buys_paused = False
 
     # ---------- nastrojki ----------
 
@@ -87,7 +93,15 @@ class PaperBroker:
             "poll": self.config.POLL_SEC,
             "slippage": self.config.SLIPPAGE_PCT,
             "rebuild_extra": 2,
+            "filter_on": 0,
+            "trend_thresh": 0.02,
         }[key])
+        if key == "filter_on":
+            # V3.9: perekliuchenie 0/1 (delta ignoriruetsja)
+            new = 1 - int(cur)
+            self.state["settings"][key] = new
+            self._save_state()
+            return new
         new = cur + delta
         if key == "step":
             new = max(0.002, min(0.05, new))
@@ -101,6 +115,8 @@ class PaperBroker:
             new = int(max(1, min(10, new)))
         elif key == "slippage":
             new = max(0.0, min(0.005, new))
+        elif key == "trend_thresh":
+            new = max(0.005, min(0.10, new))
         self.state["settings"][key] = new
         self._save_state()
         return new
@@ -307,6 +323,29 @@ class PaperBroker:
             except Exception as e:
                 logger.error("Notify error: %s", e)
 
+    def _trend_pct(self, hours=6):
+        """V3.9: izmenenie ceny za poslednie N chasov (dola)."""
+        hist = self._price_hist
+        if len(hist) < 10:
+            return 0.0
+        cutoff = time.time() - hours * 3600
+        old = None
+        for ts, p in hist:
+            if ts >= cutoff:
+                break
+            old = (ts, p)
+        if old is None or old[1] <= 0:
+            return 0.0
+        return (hist[-1][1] - old[1]) / old[1]
+
+    def _filter_state(self):
+        """V3.9: (vkliuchen_li, porog, trend, pauza_pokupok)."""
+        on = bool(self._eff("filter_on", 0))
+        thresh = -abs(float(self._eff("trend_thresh", 0.02)))
+        trend = self._trend_pct()
+        pause = on and trend < thresh
+        return on, thresh, trend, pause
+
     # ---------- ispolnenija ----------
 
     def _can_fill(self, side, price, qty):
@@ -409,6 +448,8 @@ class PaperBroker:
                 continue
             if not self._can_fill(o["side"], fp, o["qty"]):
                 continue
+            if self._buys_paused and o["side"] == "Buy":
+                continue   # V3.9: filtr trenda - pokupki na pauze
             filled.append((int(idx_str), o, fp))
 
         for idx, o, fp in filled:
@@ -519,6 +560,25 @@ class PaperBroker:
                 await self.check_fills()
                 price = self._last_price
                 if price:
+                    self._price_hist.append((time.time(), price))
+                    # V3.9: filtr trenda - pauza pokupok pri silnom padenii
+                    _on, _th, _tr, _pause = self._filter_state()
+                    if _pause != self._buys_paused:
+                        self._buys_paused = _pause
+                        if self.notify:
+                            try:
+                                if _pause:
+                                    await self.notify(
+                                        "FILTR TRENDA: pokupki na PAUZE "
+                                        "(trend " + str(round(_tr * 100, 2)) +
+                                        "% < porog " + str(round(_th * 100, 2)) +
+                                        "%). Prodazhi rabotajut.")
+                                else:
+                                    await self.notify(
+                                        "FILTR TRENDA: pokupki vozobnovleny "
+                                        "(trend " + str(round(_tr * 100, 2)) + "%).")
+                            except Exception as e:
+                                logger.error("Notify error: %s", e)
                     await self._equity_tick(price)
                     await self._daily_tick(price)
                     if not self.running:
@@ -648,6 +708,9 @@ class PaperBroker:
             str(round(b[self.base_coin], 4)) + " " + self.base_coin,
             "Ekviti: " + str(round(equity, 2)) +
             " USDT (start " + str(round(self.state["start_equity"], 2)) + ")",
+            "Filtr trenda: " + ("VKL" if self._eff("filter_on", 0) else "VYKL") +
+            " | trend 6ch: " + str(round(self._trend_pct() * 100, 2)) +
+            "% | pokupki: " + ("PAUZA" if self._buys_paused else "aktivny"),
             "Unrealiz. PnL (inventar): " + str(round(unreal, 4)) +
             " USDT (inv_cost " + str(round(self.state.get("inv_cost") or 0, 2)) +
             ", " + str(round(b[self.base_coin], 4)) + " " +
