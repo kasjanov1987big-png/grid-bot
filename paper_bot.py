@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.5.
+PAPER grid-bot. Versija 3.6.
 
 Izmenenija vs 2.2:
+- V3.6: statistika tsiklov - winrate, luchshij/khudshij tsikl
+  (stats: cycles_win, cycles_loss, best_cycle, worst_cycle).
 - V3.5: multisymbol - status ukazyvaet paru (rabotaet s config.for_symbol).
 - V3.4: ezhednevnyj avto-bjekap state.json + trades.csv v Telegram
   vmeste s dajdzhestom (cherez kolbjek notify_file).
@@ -336,6 +338,13 @@ class PaperBroker:
                 pnl = (price - b["price"]) * b["qty"] - b["fee"] - fee
                 st["realized_pnl"] += pnl
                 st["cycles"] += 1
+                # V3.6: winrate i ekstremumy tsiklov
+                st["cycles_win"] = st.get("cycles_win", 0) + (1 if pnl > 0 else 0)
+                st["cycles_loss"] = st.get("cycles_loss", 0) + (1 if pnl <= 0 else 0)
+                if st.get("best_cycle") is None or pnl > st["best_cycle"]:
+                    st["best_cycle"] = round(pnl, 6)
+                if st.get("worst_cycle") is None or pnl < st["worst_cycle"]:
+                    st["worst_cycle"] = round(pnl, 6)
                 self.state["day_cycles"] = \
                     self.state.get("day_cycles", 0) + 1
                 logger.info(

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 3.5: multisymbol - neskolko PaperBroker, knopka "Para"
+Versija 3.6: multisymbol, winrate v statistike - neskolko PaperBroker, knopka "Para"
 perekljuchaet aktivnuju paru. Uvedomlenija s prefiksom pary pri
 multisymbol. Kod tolko na latinice.
 """
@@ -168,6 +168,16 @@ class TelegramController:
             + "</b> USDT\n"
             "Srednee za tsikl: <b>"
             + str(round(s["realized_pnl"] / max(s["cycles"], 1), 4))
+            + "</b> USDT\n"
+            "Winrate: <b>"
+            + str(round(100 * s.get("cycles_win", 0)
+                        / max(s["cycles"], 1), 1))
+            + "%</b> (" + str(s.get("cycles_win", 0)) + " win / "
+            + str(s.get("cycles_loss", 0)) + " loss)\n"
+            "Luchshij tsikl: <b>+"
+            + str(round(s.get("best_cycle", 0.0), 4))
+            + "</b> USDT | Khudshij: <b>"
+            + str(round(s.get("worst_cycle", 0.0), 4))
             + "</b> USDT\n"
             "Otkrytykh pozitsij: <b>"
             + str(len(self.broker.state["open_buys"])) + "</b>"
