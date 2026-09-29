@@ -1,8 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.6.
+PAPER grid-bot. Versija 3.7.
 
 Izmenenija vs 2.2:
+- V3.7: v status - nerealizovannyj PnL inventarja; v trades.csv
+  kolonki kind (buy/cycle/inv) i level dlja tochnoj analitiki.
 - V3.6: statistika tsiklov - winrate, luchshij/khudshij tsikl
   (stats: cycles_win, cycles_loss, best_cycle, worst_cycle).
 - V3.5: multisymbol - status ukazyvaet paru (rabotaet s config.for_symbol).
@@ -139,7 +141,8 @@ class PaperBroker:
         if not os.path.exists(self.trades_file):
             with open(self.trades_file, "w", newline="", encoding="utf-8") as f:
                 csv.writer(f).writerow(
-                    ["time", "side", "symbol", "qty", "price", "fee", "cum_net_pnl"]
+                    ["time", "side", "symbol", "qty", "price", "fee",
+                     "cum_net_pnl", "kind", "level"]
                 )
 
     def _init_day(self, equity):
@@ -319,6 +322,7 @@ class PaperBroker:
         st["fees_paid"] += fee
         self.state["day_trades"] = self.state.get("day_trades", 0) + 1
 
+        kind = "buy"
         if side == "Buy":
             bal["USDT"] -= price * qty + fee
             bal[base] += qty
@@ -347,6 +351,7 @@ class PaperBroker:
                     st["worst_cycle"] = round(pnl, 6)
                 self.state["day_cycles"] = \
                     self.state.get("day_cycles", 0) + 1
+                kind = "cycle"
                 logger.info(
                     "TSIKL: kup. %s -> prod. %s | chistaja pribyl %s USDT",
                     round(b["price"], 2), price, round(pnl, 4))
@@ -355,6 +360,7 @@ class PaperBroker:
                 pnl = (price - cost) * qty - fee
                 st["realized_pnl"] += pnl
                 st["inv_sells"] = st.get("inv_sells", 0) + 1
+                kind = "inv"
                 logger.info(
                     "PRODAZHA INVENTARJA: sebest. %s -> prod. %s | pribyl %s",
                     round(cost, 2), price, round(pnl, 4))
@@ -364,6 +370,7 @@ class PaperBroker:
                 datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 side, self.config.SYMBOL, round(qty, 6), round(price, 4),
                 round(fee, 5), round(st["realized_pnl"], 5),
+                kind, idx,
             ])
 
         levels = self.state["levels"]
@@ -614,6 +621,9 @@ class PaperBroker:
         b = self.state["balances"]
         s = self.state["stats"]
         equity = b["USDT"] + b[self.base_coin] * price
+        unreal = 0.0
+        if b[self.base_coin] > 0 and self.state.get("inv_cost"):
+            unreal = (price - self.state["inv_cost"]) * b[self.base_coin]
         pnl_total = equity - self.state["start_equity"]
         lines = [
             "STATUS (PAPER): " + self.config.SYMBOL,
@@ -624,6 +634,10 @@ class PaperBroker:
             str(round(b[self.base_coin], 4)) + " " + self.base_coin,
             "Ekviti: " + str(round(equity, 2)) +
             " USDT (start " + str(round(self.state["start_equity"], 2)) + ")",
+            "Unrealiz. PnL (inventar): " + str(round(unreal, 4)) +
+            " USDT (inv_cost " + str(round(self.state.get("inv_cost") or 0, 2)) +
+            ", " + str(round(b[self.base_coin], 4)) + " " +
+            self.base_coin + ")",
             "Itog PnL: " + str(round(pnl_total, 4)) + " USDT",
             "Dnes: sdelok " + str(self.state.get("day_trades", 0)) +
             " | tsiklov " + str(self.state.get("day_cycles", 0)),
