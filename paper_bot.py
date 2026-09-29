@@ -1,8 +1,9 @@
 # -*- coding: utf-8 -*-
 """
-PAPER grid-bot. Versija 3.4.
+PAPER grid-bot. Versija 3.5.
 
 Izmenenija vs 2.2:
+- V3.5: multisymbol - status ukazyvaet paru (rabotaet s config.for_symbol).
 - V3.4: ezhednevnyj avto-bjekap state.json + trades.csv v Telegram
   vmeste s dajdzhestom (cherez kolbjek notify_file).
 - V3.3: zerkalnye ordera ne perezapisyvajut suschestvujushchie
@@ -606,7 +607,7 @@ class PaperBroker:
         equity = b["USDT"] + b[self.base_coin] * price
         pnl_total = equity - self.state["start_equity"]
         lines = [
-            "STATUS (PAPER)",
+            "STATUS (PAPER): " + self.config.SYMBOL,
             "Rabotaet: " + ("DA" if self.running else "NET") +
             " | Uptime: " + self._uptime_text(),
             "Para: " + self.config.SYMBOL + " | TSena: " + str(round(price, 2)),

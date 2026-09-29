@@ -1,10 +1,9 @@
 # -*- coding: utf-8 -*-
 """
 Telegram-interfejs dlja upravlenija paper-botom so smartfona.
-Versija 3.4: knopka Grafik, ezhednevnyj avto-bjekap fajlov, Status s orderami, redaktiruemye Nastrojki,
-polnyj bjekap (trades.csv + state.json) odnoj knopkoj, metod send()
-dlja uvedomlenij iz main.py (avto-resume).
-Kod tolko na latinice - tak file ne lomaetsja pri peredache s telefona.
+Versija 3.5: multisymbol - neskolko PaperBroker, knopka "Para"
+perekljuchaet aktivnuju paru. Uvedomlenija s prefiksom pary pri
+multisymbol. Kod tolko na latinice.
 """
 import logging
 import os
@@ -17,14 +16,33 @@ logger = logging.getLogger(__name__)
 
 
 class TelegramController:
-    def __init__(self, token, admin_id, broker):
+    def __init__(self, token, admin_id, brokers):
+        # brokers: dict {SYMBOL: PaperBroker} (ili odin broker - oborachivaem)
+        if not isinstance(brokers, dict):
+            brokers = {brokers.config.SYMBOL: brokers}
         self.bot = Bot(token=token)
         self.dp = Dispatcher()
         self.admin_id = admin_id
-        self.broker = broker
-        broker.notify = self._notify_admin
-        broker.notify_file = self._send_document
+        self.brokers = brokers
+        self.symbols = list(brokers.keys())
+        self.cur = self.symbols[0]
+        self.broker = brokers[self.cur]
+        multi = len(self.symbols) > 1
+        for sym, br in brokers.items():
+            br.notify = self._make_notifier(sym, multi)
+            br.notify_file = self._make_file_sender(sym, multi)
         self._register()
+
+    def _make_notifier(self, sym, multi):
+        async def _n(text):
+            await self._notify_admin(("[" + sym + "] " if multi else "") + text)
+        return _n
+
+    def _make_file_sender(self, sym, multi):
+        async def _f(path, caption=""):
+            await self._send_document(
+                path, (("[" + sym + "] " if multi else "") + caption))
+        return _f
 
     def _register(self):
         self.dp.message(Command("start"))(self.cmd_start)
@@ -35,6 +53,7 @@ class TelegramController:
         self.dp.message(F.text == "Logi")(self.cmd_logs)
         self.dp.message(F.text == "Nastrojki")(self.cmd_settings)
         self.dp.message(F.text == "Grafik")(self.cmd_graph)
+        self.dp.message(F.text == "Para")(self.cmd_para)
         self.dp.callback_query(F.data.startswith("set:"))(self.cb_settings)
 
     async def _notify_admin(self, text):
@@ -43,17 +62,16 @@ class TelegramController:
         except Exception as e:
             logger.error("Notify error: %s", e)
 
-    async def send(self, text):
-        """Otpravka soobshchenija adminu izvne (napr., iz main.py pri avto-resume)."""
-        await self._notify_admin(text)
-
     async def _send_document(self, path, caption=""):
-        """V3.4: otpravka fajla adminu (avto-bjekap iz paper_bot)."""
         try:
             await self.bot.send_document(
                 self.admin_id, types.FSInputFile(path), caption=caption)
         except Exception as e:
             logger.error("Send file error: %s", e)
+
+    async def send(self, text):
+        """Otpravka soobshchenija adminu izvne (napr., iz main.py)."""
+        await self._notify_admin(text)
 
     async def _is_admin(self, msg):
         if msg.from_user.id != self.admin_id:
@@ -80,24 +98,37 @@ class TelegramController:
                 ],
                 [
                     types.KeyboardButton(text="Grafik"),
+                    types.KeyboardButton(text="Para"),
                 ],
             ],
             resize_keyboard=True,
         )
         await msg.answer(
             "<b>PAPER grid-bot</b> (realnye ceny Bybit, virtualnye dengi).\n"
-            "Upravlenie knopkami nizhe.",
+            "Aktivnaja para: <b>" + self.cur + "</b>. "
+            "Knopka 'Para' - perekljuchenie. Upravlenie knopkami nizhe.",
             reply_markup=kb,
             parse_mode=ParseMode.HTML,
         )
+
+    async def cmd_para(self, msg):
+        if not await self._is_admin(msg):
+            return
+        i = self.symbols.index(self.cur)
+        self.cur = self.symbols[(i + 1) % len(self.symbols)]
+        self.broker = self.brokers[self.cur]
+        await msg.answer(
+            "Aktivnaja para: " + self.cur + "\n"
+            "Vse knopki (Status, Grafik, Nastrojki...) teper rabotajut s nej.")
 
     async def cmd_run(self, msg):
         if not await self._is_admin(msg):
             return
         if self.broker.running:
-            await msg.answer("Bot uzhe rabotaet.")
+            await msg.answer("Bot uzhe rabotaet (" + self.cur + ").")
             return
-        await msg.answer("Zapuskayu... Otchet o postroenii setki pridjet otdelno.")
+        await msg.answer("Zapuskayu (" + self.cur + ")... "
+                         "Otchet o postroenii setki pridjet otdelno.")
         ok = await self.broker.start()
         if not ok:
             await msg.answer("Ne udalos zapustit.")
@@ -106,11 +137,12 @@ class TelegramController:
         if not await self._is_admin(msg):
             return
         if not self.broker.running:
-            await msg.answer("Bot uzhe ostanovlen.")
+            await msg.answer("Bot uzhe ostanovlen (" + self.cur + ").")
             return
         ok = await self.broker.stop()
         if ok:
-            await msg.answer("Bot ostanovlen. Sostojanie sokhraneno.")
+            await msg.answer("Bot ostanovlen (" + self.cur +
+                             "). Sostojanie sokhraneno.")
         else:
             await msg.answer("Ne udalos ostanovit.")
 
@@ -125,7 +157,7 @@ class TelegramController:
             return
         s = self.broker.state["stats"]
         text = (
-            "<b>Polnaja statistika</b>\n\n"
+            "<b>Polnaja statistika</b> (" + self.cur + ")\n\n"
             "Zavershennykh tsiklov: <b>" + str(s["cycles"]) + "</b>\n"
             "Vsego sdelok: <b>" + str(s["trades"]) + "</b>\n"
             "Prodazh inventarja: <b>" + str(s.get("inv_sells", 0)) + "</b>\n"
@@ -161,8 +193,8 @@ class TelegramController:
         path = self.broker.config.EQUITY_FILE
         if not os.path.exists(path):
             await msg.answer(
-                "Net dannykh dlja grafika. Pojavjatsja cherez ~1 chas "
-                "posle zapuska bota.")
+                "Net dannykh dlja grafika (" + self.cur + "). "
+                "Pojavjatsja cherez ~1 chas posle zapuska bota.")
             return
         try:
             import matplotlib
@@ -196,7 +228,7 @@ class TelegramController:
             lo2, hi2 = min(realized), max(realized)
             pad2 = max((hi2 - lo2) * 0.2, 0.1)
             ax2.set_ylim(lo2 - pad2, hi2 + pad2)
-            ax.set_title("Grid-bot: ekviti vo vremeni")
+            ax.set_title("Grid-bot: " + self.cur)
             ax.grid(True, alpha=0.3)
             lines = ax.get_lines() + ax2.get_lines()
             ax.legend(lines, [l.get_label() for l in lines], loc="best")
@@ -211,8 +243,8 @@ class TelegramController:
             plt.close(fig)
             await msg.answer_photo(
                 types.FSInputFile(png),
-                caption="Ekviti: " + str(round(equities[-1], 2)) +
-                " USDT | tochek: " + str(len(times)))
+                caption=self.cur + " | Ekviti: " + str(round(equities[-1], 2))
+                + " USDT | tochek: " + str(len(times)))
         except Exception as e:
             await msg.answer("Ne udalos postroit grafik: " + str(e))
 
@@ -229,9 +261,9 @@ class TelegramController:
         rextra = s.get("rebuild_extra", 2)
 
         text = (
-            "<b>Nastrojki</b> (primenjajutsja pri sledujushchem zapuske setki)\n\n"
+            "<b>Nastrojki</b> (" + self.cur + ") - primenjajutsja pri "
+            "sledujushchem zapuske setki\n\n"
             "Rezhim: <code>PAPER (bez klyuchej)</code>\n"
-            "Para: <code>" + c.SYMBOL + "</code>\n"
             "Summa na order: <code>" + str(round(quote, 2)) + "</code> USDT\n"
             "Shag setki: <code>" + str(round(step * 100, 2)) + "%</code>\n"
             "Urovnej s kazhdo storony: <code>" + str(levels) + "</code>\n"
@@ -282,9 +314,10 @@ class TelegramController:
         key = parts[1]
         delta = float(parts[2])
         new_val = self.broker.update_setting(key, delta)
-        await cq.answer("Sokhraneno: " + key + " = " + str(round(new_val, 4)))
+        await cq.answer("Sokhraneno (" + self.cur + "): " + key + " = "
+                        + str(round(new_val, 4)))
         await self.cmd_settings(cq.message)
 
     async def run(self):
-        logger.info("Telegram-bot zapushchen")
+        logger.info("Telegram-bot zapushchen. Pary: %s", ", ".join(self.symbols))
         await self.dp.start_polling(self.bot)
